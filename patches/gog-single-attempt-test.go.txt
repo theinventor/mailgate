@@ -1,0 +1,72 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"google.golang.org/api/gmail/v1"
+	"google.golang.org/api/option"
+
+	"github.com/openclaw/gogcli/internal/googleapi"
+)
+
+// Exercise the actual CLI send paths through GOG's retrying transport. A lost
+// acknowledgement must never turn one Mailgate send into multiple Gmail POSTs.
+func TestMailgateSendSingleAttempt(t *testing.T) {
+	for _, raw := range []bool{false, true} {
+		for _, status := range []int{429, 500, 503} {
+			t.Run(fmt.Sprintf("raw=%t/status=%d", raw, status), func(t *testing.T) {
+				var calls atomic.Int32
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/users/me/settings/sendAs") {
+						w.Header().Set("Content-Type", "application/json")
+						io.WriteString(w, `{"sendAs":[{"sendAsEmail":"a@b.com","isPrimary":true,"isDefault":true,"verificationStatus":"accepted"}]}`)
+						return
+					}
+					if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/users/me/messages/send") {
+						t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+						http.NotFound(w, r)
+						return
+					}
+					calls.Add(1)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(status)
+					fmt.Fprintf(w, `{"error":{"code":%d,"message":"simulated ambiguous failure"}}`, status)
+				}))
+				defer srv.Close()
+				client := srv.Client()
+				client.Transport = &googleapi.RetryTransport{
+					Base: client.Transport, MaxRetries429: 2, MaxRetries5xx: 2,
+				}
+				svc, err := gmail.NewService(context.Background(), option.WithHTTPClient(client), option.WithEndpoint(srv.URL))
+				if err != nil {
+					t.Fatal(err)
+				}
+				command := &GmailSendCmd{To: "recipient@example.com", Subject: "Test", Body: "Test body"}
+				if raw {
+					path := filepath.Join(t.TempDir(), "message.eml")
+					content := "From: a@b.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nTest body\r\n"
+					if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+						t.Fatal(err)
+					}
+					command = &GmailSendCmd{RawFile: path}
+				}
+				ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+				if err := command.Run(ctx, &RootFlags{Account: "a@b.com"}); err == nil {
+					t.Fatal("expected send failure")
+				}
+				if got := calls.Load(); got != 1 {
+					t.Fatalf("send POST count = %d; want exactly 1", got)
+				}
+			})
+		}
+	}
+}

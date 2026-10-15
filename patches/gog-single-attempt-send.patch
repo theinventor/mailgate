@@ -1,0 +1,20 @@
+--- a/internal/cmd/gmail_send.go
++++ b/internal/cmd/gmail_send.go
+@@ -285,7 +285,7 @@
+ 		}
+ 	}
+ 	message := &gmail.Message{Raw: base64.RawURLEncoding.EncodeToString(raw), ThreadId: plan.ThreadID}
+-	sent, err := svc.Users.Messages.Send("me", message).Context(ctx).Do()
++	sent, err := svc.Users.Messages.Send("me", message).Context(googleapi.WithoutRetries(ctx)).Do()
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -502,7 +502,7 @@
+ 			return nil, err
+ 		}
+ 
+-		sent, err := svc.Users.Messages.Send("me", msg).Context(ctx).Do()
++		sent, err := svc.Users.Messages.Send("me", msg).Context(googleapi.WithoutRetries(ctx)).Do()
+ 		if err != nil {
+ 			return nil, err
+ 		}

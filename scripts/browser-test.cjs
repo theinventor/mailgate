@@ -1,0 +1,110 @@
+"use strict";
+const {chromium} = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const {spawn} = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const assert = require("node:assert/strict");
+
+(async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mailgate-browser-"));
+  const urlFile = path.join(dir,"url");
+  const fixture = spawn("go", ["test","./internal/gateway","-run","^TestBrowserFixture$","-count=1"], {env:{...process.env,MAILGATE_BROWSER_URL_FILE:urlFile},stdio:["ignore","pipe","pipe"]});
+  let fixtureLog = "";
+  fixture.stdout.on("data", data => { fixtureLog += data; });
+  fixture.stderr.on("data", data => { fixtureLog += data; });
+  let browser;
+  try {
+    const start = Date.now();
+    while (!fs.existsSync(urlFile)) {
+      if (fixture.exitCode !== null || Date.now()-start > 30000) throw new Error("Fixture startup failed: " + fixtureLog);
+      await new Promise(resolve => setTimeout(resolve,100));
+    }
+    const origin = fs.readFileSync(urlFile,"utf8");
+    browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH || "/usr/bin/chromium"});
+    const context = await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}});
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto(origin+"/admin/");
+    await page.getByRole("heading",{name:"Welcome.",exact:true}).waitFor();
+    fs.mkdirSync("test-results",{recursive:true});
+    await page.screenshot({path:"test-results/setup.png",fullPage:true});
+    await page.getByRole("button",{name:"Generate a strong password"}).click();
+    const generatedPassword = await page.locator("#password").inputValue();
+    assert.equal(generatedPassword.length,32);
+    assert.equal(await page.locator("#confirm-password").inputValue(),generatedPassword);
+    const password = "x";
+    await page.locator("#password").fill(password);
+    await page.locator("#confirm-password").fill(password);
+    await page.getByRole("button",{name:"Set password & continue"}).click();
+    await page.locator("#app").waitFor({state:"visible"});
+    await page.locator("#tokens-empty").waitFor({state:"visible"});
+    const cookies = await context.cookies();
+    const admin = cookies.find(cookie => cookie.name === "__Host-mailgate_admin");
+    assert(admin && admin.secure && admin.httpOnly && admin.sameSite === "Strict");
+
+    async function createToken(name,send=false) {
+      await page.locator("#new-token").click();
+      await page.locator("#token-name").fill(name);
+      if (send) await page.locator('input[name="scope"][value="mail.send"]').check();
+      await page.locator("#token-submit").click();
+      await page.locator("#secret-dialog").waitFor({state:"visible"});
+      assert.match(await page.locator("#token-secret").inputValue(),/^mg_[a-f0-9]{24}\.[A-Za-z0-9_-]{43}$/);
+      await page.locator("#secret-done").click();
+      assert.equal(await page.locator("#token-secret").inputValue(),"");
+      await page.locator("#tokens-body").getByText(name,{exact:true}).waitFor();
+    }
+    await createToken("Research assistant");
+    await createToken("Shopping agent",true);
+    await createToken("Daily briefing");
+    await page.screenshot({path:"test-results/tokens-desktop.png",fullPage:true});
+    await page.setViewportSize({width:390,height:844});
+    await page.screenshot({path:"test-results/tokens-mobile.png",fullPage:true});
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),"mobile layout overflows the viewport");
+    await page.setViewportSize({width:1440,height:1000});
+    const research = page.locator("#tokens-body tr").filter({hasText:"Research assistant"});
+    await research.getByRole("button",{name:"Edit",exact:true}).click();
+    await page.locator("#reads").fill("100");
+    await page.getByRole("button",{name:"Save changes"}).click();
+    await research.getByText("100 reads · 0 sends / day",{exact:true}).waitFor();
+    page.on("dialog",dialog => dialog.accept());
+    await research.getByRole("button",{name:"Revoke",exact:true}).click();
+    await research.getByText("Revoked",{exact:true}).waitFor();
+    await createToken('<img src=x onerror="window.mailgateXSS=true">');
+    assert.equal(await page.evaluate(() => window.mailgateXSS),undefined);
+    assert.equal(await page.locator("#tokens-body img").count(),0);
+    const injected = page.locator("#tokens-body tr").filter({hasText:"onerror"});
+    await injected.getByRole("button",{name:"Delete",exact:true}).click();
+    await injected.waitFor({state:"detached"});
+    await page.locator('[data-view="activity"]').click();
+    await page.locator("#activity-body").getByText("token.deleted",{exact:true}).waitFor();
+    await page.locator('[data-view="alerts"]').click();
+    await page.getByText("All clear. No alerts waiting for delivery.").waitFor();
+    await page.locator("#logout").click();
+    await page.getByRole("heading",{name:"Welcome back.",exact:true}).waitFor();
+    await page.reload();
+    await page.getByRole("heading",{name:"Welcome back.",exact:true}).waitFor();
+    await page.locator("#password").fill(password);
+    await page.locator("#auth-submit").click();
+    await page.locator("#app").waitFor({state:"visible"});
+    await page.locator('[data-view="settings"]').click();
+    await page.locator("#current-password").fill(password);
+    const newPassword = "7";
+    await page.locator("#new-password").fill(newPassword);
+    await page.locator("#repeat-password").fill(newPassword);
+    await page.getByRole("button",{name:"Change password",exact:true}).click();
+    await page.getByRole("heading",{name:"Welcome back.",exact:true}).waitFor();
+    await page.locator("#password").fill(newPassword);
+    await page.locator("#auth-submit").click();
+    await page.locator("#app").waitFor({state:"visible"});
+    assert.deepEqual(errors,[],"browser JavaScript errors");
+    console.log("PASS: automatic setup with a one-character password, password generator, secure session, token CRUD, edit/revoke, XSS escaping, audit, alerts, mobile layout, login, password change to a one-character password and subsequent login.");
+    console.log("Screenshots: test-results/setup.png, tokens-desktop.png, tokens-mobile.png");
+  } finally {
+    if (browser) await browser.close();
+    fs.writeFileSync(urlFile+".done","");
+    if (fixture.exitCode === null) await new Promise(resolve => fixture.once("exit",resolve));
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+})().catch(error => { console.error(error.message); process.exitCode=1; });

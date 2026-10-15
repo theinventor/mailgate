@@ -1,0 +1,18 @@
+// Merge deliberately into your tailnet policy. Grants are additive: remove or
+// narrow any existing allow-all rule that would also allow access to this host.
+// Use a tag assigned ONLY to the owner's trusted device, not just their user identity:
+// agent machines may be logged in as that same user.
+{
+  "tagOwners": {
+    "tag:mailgate": ["autogroup:admin"],
+    "tag:mailgate-owner": ["autogroup:admin"],
+    "tag:mail-agent": ["autogroup:admin"]
+  },
+  "grants": [
+    {"src": ["tag:mailgate-owner"], "dst": ["tag:mailgate"], "ip": ["tcp:22", "tcp:9443", "tcp:9444"]},
+    {"src": ["tag:mail-agent"], "dst": ["tag:mailgate"], "ip": ["tcp:9444"]}
+  ],
+  "tests": [
+    {"src": "tag:mail-agent", "accept": ["tag:mailgate:9444"], "deny": ["tag:mailgate:22", "tag:mailgate:9443", "tag:mailgate:8787", "tag:mailgate:8788"]}
+  ]
+}

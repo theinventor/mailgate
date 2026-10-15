@@ -1,0 +1,19 @@
+[Unit]
+Description=Mailgate audit retention and expired session cleanup
+
+[Service]
+Type=oneshot
+User=mailgate
+Group=mailgate
+ExecStart=/usr/local/bin/mailgate --config /etc/mailgate/config.json maintain --audit-days 90
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/mailgate
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=256M
+LimitCORE=0

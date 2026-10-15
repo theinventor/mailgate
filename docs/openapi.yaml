@@ -1,0 +1,148 @@
+openapi: 3.1.0
+info:
+  title: Mailgate agent API
+  version: 0.1.0
+  description: Private, permission-controlled Gmail access. Owner administration uses a separate listener and password session.
+servers:
+  - url: https://mailgate.example:9444
+security:
+  - agentToken: []
+paths:
+  /healthz:
+    get:
+      security: []
+      summary: Minimal database-backed health check
+      responses:
+        '200': {description: Healthy}
+        '503': {description: Unavailable}
+  /v1/messages/search:
+    post:
+      summary: Search inspected message metadata
+      description: Requires mail.search. Sensitive queries return a normal 200 response with an empty messages array.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [query]
+              properties:
+                query: {type: string, minLength: 1, maxLength: 2048}
+                limit: {type: integer, minimum: 1, maximum: 20, default: 10}
+                cursor: {type: string, description: Opaque cursor bound to token and query, maxLength: 43}
+      responses:
+        '200':
+          description: Inspected metadata, or an empty result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages: {type: array, items: {$ref: '#/components/schemas/Message'}}
+                  next_cursor: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /v1/messages/{message_id}:
+    get:
+      summary: Read an inspected message as plain text
+      description: Requires mail.read. Missing, protected, or uninspectable messages all return 404.
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[a-fA-F0-9]{8,64}$'}
+      responses:
+        '200':
+          description: Message
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: {$ref: '#/components/schemas/Message'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /v1/messages/send:
+    post:
+      summary: Send plain text mail with the owner's required copy
+      description: Requires mail.send. Never retry an uncertain send using a new key; ask the owner to review Sent mail first.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9_-]{16,128}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [to, subject, body]
+              properties:
+                to: {type: array, minItems: 1, maxItems: 20, items: {type: string, format: email}}
+                cc: {type: array, maxItems: 19, items: {type: string, format: email}}
+                subject: {type: string, minLength: 1, maxLength: 200}
+                body: {type: string, minLength: 1, maxLength: 32768}
+      responses:
+        '200':
+          description: Sent, or identical replay of an already completed send
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: {type: string}
+                      thread_id: {type: string}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    agentToken:
+      type: http
+      scheme: bearer
+      bearerFormat: mg_ID.SECRET
+  schemas:
+    Message:
+      type: object
+      required: [id, from, subject, untrusted_content]
+      properties:
+        id: {type: string}
+        thread_id: {type: string}
+        from: {type: string}
+        to: {type: string}
+        cc: {type: string}
+        subject: {type: string}
+        date: {type: string}
+        body: {type: string, description: Present only on read responses}
+        untrusted_content: {type: boolean, const: true}
+  responses:
+    Error:
+      description: Request denied or unavailable; see error code
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: {type: string}

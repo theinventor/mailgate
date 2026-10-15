@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Mailgate · Owner admin</title>
+  <link rel="stylesheet" href="/admin/assets/style.css">
+  <script src="/admin/assets/app.js" defer></script>
+</head>
+<body>
+  <div id="notice" class="notice" role="alert" hidden></div>
+  <main id="auth" class="auth-wrap">
+    <div class="auth-brand"><span class="logo">m</span><span>Mailgate</span></div>
+    <section class="auth-card">
+      <span class="eyebrow">YOUR MAIL. YOUR RULES.</span>
+      <h1 id="auth-title">Opening your gateway…</h1>
+      <p id="auth-description" class="muted">Connecting to your private admin interface.</p>
+      <form id="auth-form" hidden>
+        <label for="password">Admin password</label>
+        <div class="password-field"><input id="password" type="password" autocomplete="current-password" required maxlength="1024"><button id="show-password" type="button" class="plain">Show</button></div>
+        <div id="setup-options" hidden>
+          <button id="generate-password" type="button" class="secondary wide">Generate a strong password</button>
+          <label for="confirm-password">Confirm password</label>
+          <input id="confirm-password" type="password" autocomplete="new-password" maxlength="1024">
+          <p class="field-note">Save your password somewhere you can find it again.</p>
+        </div>
+        <p id="auth-error" class="error" role="alert"></p>
+        <button id="auth-submit" class="primary wide" type="submit">Sign in</button>
+      </form>
+    </section>
+    <p class="auth-footer"><span class="dot"></span> Private access through your tailnet</p>
+  </main>
+
+  <div id="app" class="app" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="logo">m</span><span>Mailgate<small>OWNER ADMIN</small></span></div>
+      <span class="nav-label">WORKSPACE</span>
+      <nav aria-label="Main navigation">
+        <button data-view="tokens" class="nav-item active"><span class="nav-symbol">⌘</span>Access tokens</button>
+        <button data-view="activity" class="nav-item"><span class="nav-symbol">≡</span>Activity</button>
+        <button data-view="alerts" class="nav-item"><span class="nav-symbol">◉</span>Alerts</button>
+        <button data-view="settings" class="nav-item"><span class="nav-symbol">⚙︎</span>Settings</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="private-status"><span class="dot"></span>Private gateway</div><div class="owner"><span class="avatar">M</span><span>Owner<small>Administrator</small></span><button id="logout" class="plain" title="Sign out">Sign out</button></div></div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar"><span>Workspace <span class="breadcrumb">/</span> <strong id="breadcrumb">Access tokens</strong></span><span class="account" id="account"></span></header>
+      <div class="content">
+        <div class="page-heading"><div><span class="eyebrow">MAILGATE CONTROL ROOM</span><h1 id="page-title">Access tokens</h1><p id="page-description" class="muted">Give each agent exactly the access it needs.</p></div><div class="heading-actions"><button id="refresh" class="secondary">Refresh</button><button id="new-token" class="primary">+ Create token</button></div></div>
+        <section class="stats" aria-label="Gateway overview">
+          <article class="stat"><span>Active tokens</span><strong id="stat-tokens">—</strong><small>Individual agent permissions</small></article>
+          <article class="stat"><span>Requests today</span><strong id="stat-requests">—</strong><small>Agent API · UTC day</small></article>
+          <article class="stat"><span>Flags today</span><strong id="stat-flags">—</strong><small>Policy and access events</small></article>
+          <article class="stat"><span>Queued alerts</span><strong id="stat-alerts">—</strong><small>Awaiting delivery</small></article>
+        </section>
+        <section id="view-tokens" class="panel">
+          <div class="panel-header"><div><h2>Your agents</h2><p class="muted">Permissions, limits, and a clear trail for every request.</p></div><span id="token-count" class="subtle-pill">0 tokens</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Agent</th><th>Permissions</th><th>Limits</th><th>Owner copy</th><th>Status</th><th class="right">Manage</th></tr></thead><tbody id="tokens-body"></tbody></table></div>
+          <div id="tokens-empty" class="empty" hidden><div class="empty-mark">⌘</div><h3>Your first agent starts here</h3><p>Create a token with its own permissions and limits.</p><button id="empty-create" class="primary">Create a token</button></div>
+          <div class="panel-footer"><span class="dot"></span>Token secrets are shown once. You can revoke access at any time.</div>
+        </section>
+        <section id="view-activity" class="panel" hidden><div class="panel-header"><div><h2>Recent activity</h2><p class="muted">The latest 150 events. Email bodies and credentials stay out of the log.</p></div></div><div class="table-scroll"><table><thead><tr><th>Time</th><th>Event</th><th>Agent / actor</th><th>Status</th><th>Details</th></tr></thead><tbody id="activity-body"></tbody></table></div></section>
+        <section id="view-alerts" hidden><div class="panel"><div class="panel-header"><div><h2>Alert delivery</h2><p id="alert-channels" class="muted"></p></div></div><div id="alerts-list" class="event-list"></div></div><div class="panel spaced"><div class="panel-header"><div><h2>Send outcomes to review</h2><p class="muted">Check Gmail Sent before retrying a send with an unknown outcome.</p></div></div><div id="sends-list" class="event-list"></div></div></section>
+        <section id="view-settings" class="panel settings" hidden><div class="panel-header"><div><h2>Admin password</h2><p class="muted">Changing your password signs out all admin sessions.</p></div></div><form id="password-form"><label for="current-password">Current password</label><input id="current-password" type="password" autocomplete="current-password" required maxlength="1024"><label for="new-password">New password</label><input id="new-password" type="password" autocomplete="new-password" required maxlength="1024"><label for="repeat-password">Confirm new password</label><input id="repeat-password" type="password" autocomplete="new-password" required maxlength="1024"><button class="primary" type="submit">Change password</button></form></section>
+        <footer class="workspace-footer">Controlled access to your Gmail.<span>Search · Read · Send</span></footer>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="token-dialog" class="token-dialog">
+    <div class="dialog-header"><div><span class="eyebrow">AGENT ACCESS</span><h2 id="token-dialog-title">Create a token</h2></div><button class="close-dialog plain" type="button" aria-label="Close">×</button></div>
+    <form id="token-form">
+      <label for="token-name">Agent name</label><input id="token-name" required maxlength="80" placeholder="e.g. Shopping agent" autocomplete="off">
+      <fieldset><legend>Permissions</legend><div class="permissions"><label><input type="checkbox" name="scope" value="mail.search" checked><span><strong>Search</strong><small>Find matching emails</small></span></label><label><input type="checkbox" name="scope" value="mail.read" checked><span><strong>Read</strong><small>Open email content</small></span></label><label><input type="checkbox" name="scope" value="mail.send"><span><strong>Send</strong><small>Send plain text email</small></span></label></div></fieldset>
+      <div class="form-grid three"><div><label for="rpm">Requests / minute</label><input id="rpm" type="number" min="1" max="10000" value="30" required></div><div><label for="reads">Reads / day</label><input id="reads" type="number" min="1" max="100000" value="500" required></div><div><label for="sends">Sends / day</label><input id="sends" type="number" min="0" max="1000" value="10" required></div></div>
+      <p class="field-note">Reading candidates during a search counts toward the read limit.</p>
+      <div class="form-grid"><div><label for="owner-copy">Copy you on sent mail</label><select id="owner-copy"><option value="cc">Always CC me</option><option value="bcc">Always BCC me</option><option value="none">No required copy</option></select></div><div><label for="expiry">Expires at</label><input id="expiry" type="datetime-local" required></div></div>
+      <details><summary>Limit mailbox access and recipients</summary><label for="allowed-labels">Allowed Gmail label IDs</label><textarea id="allowed-labels" rows="2" placeholder="INBOX, Label_123"></textarea><label for="allowed-senders">Allowed senders</label><textarea id="allowed-senders" rows="2" placeholder="person@example.com"></textarea><label for="allowed-recipients">Allowed recipients</label><textarea id="allowed-recipients" rows="2" placeholder="person@example.com"></textarea><p class="field-note">Separate entries with commas or newlines. Empty fields allow all, subject to sensitive-content rules. Your required copy is always added.</p></details>
+      <p id="token-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button id="token-submit" type="submit" class="primary">Create token</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="secret-dialog" class="secret-dialog"><span class="eyebrow">READY FOR YOUR AGENT</span><h2>Save this token</h2><p class="muted">This is the only time its secret is shown. Give it to the agent you created it for.</p><label for="token-secret">Bearer token</label><textarea id="token-secret" rows="3" readonly spellcheck="false" autocomplete="off"></textarea><div class="dialog-actions"><button id="copy-secret" class="secondary">Copy token</button><button id="secret-done" class="primary">I've saved it</button></div></dialog>
+</body>
+</html>

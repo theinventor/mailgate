@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Mailgate maintenance
+
+[Timer]
+OnCalendar=*-*-* 04:19:00
+RandomizedDelaySec=30m
+Persistent=yes
+
+[Install]
+WantedBy=timers.target

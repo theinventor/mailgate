@@ -1,0 +1,14 @@
+/bin/
+/dist/
+/state/
+/secrets/
+*.db
+*.db-*
+*.sqlite*
+*.test
+coverage.out
+.env
+config.local.json
+node_modules/
+test-results/
+docs/reviews/*.json

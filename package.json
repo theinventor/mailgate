@@ -1,0 +1,6 @@
+{
+  "name": "mailgate-browser-tests",
+  "private": true,
+  "scripts": { "test": "node scripts/browser-test.cjs" },
+  "devDependencies": { "playwright": "1.64.1" }
+}
