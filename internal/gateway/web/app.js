@@ -95,6 +95,7 @@ function renderTokens() {
     const name = cell(row); name.append(el("strong", token.name), el("small", token.id.slice(0,12) + "…", "mono"));
     const permissions = cell(row);
     token.policy.scopes.forEach(scope => permissions.append(el("span", scope.replace("mail.", ""), "badge " + (scope === "mail.send" ? "send" : ""))));
+    if (token.policy.unrestricted_read) permissions.append(el("span", "Full read", "badge"));
     if ((token.policy.allowed_label_ids || []).length || (token.policy.allowed_senders || []).length || (token.policy.allowed_recipients || []).length) permissions.append(el("small", "Restricted access"));
     const limits = cell(row); limits.append(el("strong", token.policy.requests_per_minute + " / min"), el("small", token.policy.reads_per_day + " reads · " + (token.policy.scopes.includes("mail.send") ? token.policy.sends_per_day : 0) + " sends / day"));
     cell(row, token.policy.copy_owner === "none" ? "None" : "Always " + token.policy.copy_owner.toUpperCase());
@@ -137,9 +138,12 @@ async function refresh() {
     const events = await api("audit"); $("#activity-body").replaceChildren();
     for (const item of events) {
       const row = el("tr"); cell(row, localDate(item.at)); cell(row, item.action);
-      cell(row, item.token_id || "—", "mono"); cell(row, item.status || "—");
+      const actor = cell(row, item.token_name || item.token_id || "—");
+      if (item.token_name && item.token_id) actor.append(el("small", item.token_id, "mono"));
+      cell(row, item.status || "—");
       const detail = item.details || {};
-      cell(row, [item.route, detail.rule, detail.name, detail.returned === undefined ? "" : detail.returned + " returned", detail.withheld ? detail.withheld + " withheld" : ""].filter(Boolean).join(" · "), "details-cell");
+      const trigger = {search_query:"Search query blocked", search_result:"Protected email in search results", message:"Requested email withheld", outgoing_message:"Outgoing message"}[detail.trigger];
+      cell(row, ["Audit #" + item.id, [detail.method, detail.path].filter(Boolean).join(" ") || item.route, detail.rule, trigger, detail.query_preview ? "Query: " + detail.query_preview : "", detail.message_from ? "From: " + detail.message_from : "", detail.message_subject ? "Subject: " + detail.message_subject : "", detail.recipient_preview ? "Recipients: " + detail.recipient_preview : "", detail.required_permission ? "Requires " + detail.required_permission : "", detail.unrestricted_read ? "Full read access" : "", detail.name, detail.returned === undefined ? "" : detail.returned + " returned", detail.withheld ? detail.withheld + " withheld" : ""].filter(Boolean).join(" · "), "details-cell");
       $("#activity-body").append(row);
     }
   }
@@ -170,12 +174,19 @@ function openToken(token) {
     $$("input[name=scope]").forEach(input => { input.checked = token.policy.scopes.includes(input.value); });
     $("#rpm").value = token.policy.requests_per_minute; $("#reads").value = token.policy.reads_per_day; $("#sends").value = token.policy.sends_per_day;
     $("#owner-copy").value = token.policy.copy_owner;
+    $("#unrestricted-read").checked = Boolean(token.policy.unrestricted_read);
     $("#allowed-labels").value = (token.policy.allowed_label_ids || []).join("\n");
     $("#allowed-senders").value = (token.policy.allowed_senders || []).join("\n");
     $("#allowed-recipients").value = (token.policy.allowed_recipients || []).join("\n");
   }
   $("#token-dialog").showModal(); $("#token-name").focus();
 }
+$("#unrestricted-read").addEventListener("change", () => {
+  if ($("#unrestricted-read").checked) $('input[name="scope"][value="mail.read"]').checked = true;
+});
+$('input[name="scope"][value="mail.read"]').addEventListener("change", event => {
+  if (!event.target.checked) $("#unrestricted-read").checked = false;
+});
 $("#new-token").addEventListener("click", () => openToken(null));
 $("#empty-create").addEventListener("click", () => openToken(null));
 $$(".close-dialog").forEach(button => button.addEventListener("click", () => $("#token-dialog").close()));
@@ -183,7 +194,7 @@ const entries = (id) => $(id).value.split(/[,\n]/).map(value => value.trim()).fi
 $("#token-form").addEventListener("submit", async (event) => {
   event.preventDefault(); $("#token-error").textContent = ""; $("#token-submit").disabled = true;
   try {
-    const payload = {name:$("#token-name").value.trim(), expires_at:new Date($("#expiry").value).toISOString(), policy:{scopes:$$("input[name=scope]:checked").map(input => input.value), requests_per_minute:Number($("#rpm").value), reads_per_day:Number($("#reads").value), sends_per_day:Number($("#sends").value), copy_owner:$("#owner-copy").value, allowed_label_ids:entries("#allowed-labels"), allowed_senders:entries("#allowed-senders"), allowed_recipients:entries("#allowed-recipients")}};
+    const payload = {name:$("#token-name").value.trim(), expires_at:new Date($("#expiry").value).toISOString(), policy:{scopes:$$("input[name=scope]:checked").map(input => input.value), unrestricted_read:$("#unrestricted-read").checked, requests_per_minute:Number($("#rpm").value), reads_per_day:Number($("#reads").value), sends_per_day:Number($("#sends").value), copy_owner:$("#owner-copy").value, allowed_label_ids:entries("#allowed-labels"), allowed_senders:entries("#allowed-senders"), allowed_recipients:entries("#allowed-recipients")}};
     const result = await api(editing ? "tokens/" + editing.id : "tokens", editing ? "PUT" : "POST", payload);
     $("#token-dialog").close();
     if (result.secret) { $("#token-secret").value = result.secret; $("#copy-secret").textContent = "Copy token"; $("#secret-dialog").showModal(); }

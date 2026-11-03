@@ -1,5 +1,5 @@
 GO ?= go
-VERSION ?= 0.1.0
+VERSION ?= 0.1.2
 BUILD_FLAGS = -trimpath -ldflags "-s -w -X main.version=$(VERSION)"
 
 .PHONY: build test race vet check release browser-test vuln

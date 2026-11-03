@@ -51,13 +51,13 @@ func (n *Notifier) Deliver(ctx context.Context, job AlertJob) string {
 	var err error
 	switch job.Channel {
 	case "pushover":
-		form := url.Values{"token": {n.secrets.PushoverToken}, "user": {n.secrets.PushoverUser}, "title": {"Mailgate security alert"}, "message": {job.Message}, "priority": {"1"}, "sound": {"pushover"}}
+		form := url.Values{"token": {n.secrets.PushoverToken}, "user": {n.secrets.PushoverUser}, "title": {securityAlertTitle(job.Message)}, "message": {job.Message}, "priority": {"1"}, "sound": {"pushover"}}
 		req, err = http.NewRequestWithContext(ctx, "POST", "https://api.pushover.net/1/messages.json", strings.NewReader(form.Encode()))
 		if err == nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 	case "brrr":
-		body, _ := json.Marshal(map[string]string{"title": "Mailgate security alert", "message": job.Message, "interruption_level": "time-sensitive", "sound": "system", "thread_id": "mailgate-security"})
+		body, _ := json.Marshal(map[string]string{"title": securityAlertTitle(job.Message), "message": job.Message, "interruption_level": "time-sensitive", "sound": "system", "thread_id": "mailgate-security"})
 		req, err = http.NewRequestWithContext(ctx, "POST", "https://api.brrr.now/v1/send", bytes.NewReader(body))
 		if err == nil {
 			req.Header.Set("Content-Type", "application/json")

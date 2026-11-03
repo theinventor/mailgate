@@ -286,6 +286,7 @@ type Event struct {
 	At        string         `json:"at"`
 	RequestID string         `json:"request_id"`
 	TokenID   string         `json:"token_id,omitempty"`
+	TokenName string         `json:"token_name,omitempty"`
 	Action    string         `json:"action"`
 	Route     string         `json:"route,omitempty"`
 	Status    int            `json:"status,omitempty"`
@@ -294,6 +295,15 @@ type Event struct {
 }
 
 func appendEvent(ctx context.Context, db sqlExecutor, e Event) (int64, error) {
+	if e.At == "" {
+		e.At = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if e.TokenName != "" {
+		if e.Details == nil {
+			e.Details = map[string]any{}
+		}
+		e.Details["token_name"] = botPreview(e.TokenName, 80)
+	}
 	detail, err := json.Marshal(e.Details)
 	if err != nil {
 		return 0, err
@@ -301,7 +311,7 @@ func appendEvent(ctx context.Context, db sqlExecutor, e Event) (int64, error) {
 	if len(detail) > 16384 {
 		return 0, errors.New("audit record too large")
 	}
-	r, err := db.ExecContext(ctx, `INSERT INTO audit(at,request_id,token_id,action,route,status,peer,details) VALUES(?,?,?,?,?,?,?,?)`, time.Now().UTC().Format(time.RFC3339Nano), e.RequestID, e.TokenID, e.Action, e.Route, e.Status, e.Peer, string(detail))
+	r, err := db.ExecContext(ctx, `INSERT INTO audit(at,request_id,token_id,action,route,status,peer,details) VALUES(?,?,?,?,?,?,?,?)`, e.At, e.RequestID, e.TokenID, e.Action, e.Route, e.Status, e.Peer, string(detail))
 	if err != nil {
 		return 0, err
 	}
@@ -314,13 +324,20 @@ func (s *Store) Record(ctx context.Context, e Event, channels []string, reason s
 		return err
 	}
 	defer tx.Rollback()
+	if e.TokenName == "" && e.TokenID != "" {
+		err := tx.QueryRowContext(ctx, "SELECT name FROM tokens WHERE id=?", e.TokenID).Scan(&e.TokenName)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	e.At = time.Now().UTC().Format(time.RFC3339Nano)
 	id, err := appendEvent(ctx, tx, e)
 	if err != nil {
 		return err
 	}
 	if reason != "" {
-		// Pushes contain rule IDs, token IDs and an audit reference, never mail content.
-		message := fmt.Sprintf("Mailgate: token %s triggered %s. Audit event %d; request %s.", e.TokenID, reason, id, e.RequestID)
+		e.ID = id
+		message := securityAlert(e, reason)
 		for _, channel := range channels {
 			dedupe := hashText(fmt.Sprintf("%s|%s|%s|%s|%d", channel, e.TokenID, e.Route, reason, time.Now().Unix()/60))
 			_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO alerts(event_id,channel,dedupe,message,next_attempt) VALUES(?,?,?,?,?)`, id, channel, dedupe, message, time.Now().Unix())
@@ -336,7 +353,7 @@ func (s *Store) Events(ctx context.Context, limit int) ([]Event, error) {
 	if limit < 1 || limit > 1000 {
 		return nil, errors.New("limit must be 1–1000")
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT id,at,request_id,token_id,action,route,status,peer,details FROM audit ORDER BY id DESC LIMIT ?", limit)
+	rows, err := s.db.QueryContext(ctx, "SELECT a.id,a.at,a.request_id,a.token_id,a.action,a.route,a.status,a.peer,a.details,coalesce(t.name,'') FROM audit a LEFT JOIN tokens t ON t.id=a.token_id ORDER BY a.id DESC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}
@@ -345,12 +362,16 @@ func (s *Store) Events(ctx context.Context, limit int) ([]Event, error) {
 	for rows.Next() {
 		var e Event
 		var d string
-		if err := rows.Scan(&e.ID, &e.At, &e.RequestID, &e.TokenID, &e.Action, &e.Route, &e.Status, &e.Peer, &d); err != nil {
+		if err := rows.Scan(&e.ID, &e.At, &e.RequestID, &e.TokenID, &e.Action, &e.Route, &e.Status, &e.Peer, &d, &e.TokenName); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(d), &e.Details); err != nil {
 			return nil, err
 		}
+		if snapshot := eventText(e, "token_name"); snapshot != "" {
+			e.TokenName = snapshot
+		}
+		e.TokenName = botPreview(e.TokenName, 80)
 		result = append(result, e)
 	}
 	return result, rows.Err()

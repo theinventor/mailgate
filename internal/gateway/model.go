@@ -27,6 +27,7 @@ var (
 
 type TokenPolicy struct {
 	Scopes            []string `json:"scopes"`
+	UnrestrictedRead  bool     `json:"unrestricted_read,omitempty"`
 	RequestsPerMinute int      `json:"requests_per_minute"`
 	ReadsPerDay       int      `json:"reads_per_day"`
 	SendsPerDay       int      `json:"sends_per_day"`
@@ -52,6 +53,9 @@ func (p TokenPolicy) Validate() error {
 			return errors.New("unknown or duplicate permission")
 		}
 		seen[s] = true
+	}
+	if p.UnrestrictedRead && !p.Has(ScopeRead) {
+		return errors.New("full read access requires mail.read")
 	}
 	if p.RequestsPerMinute < 1 || p.RequestsPerMinute > 10000 || p.ReadsPerDay < 1 || p.ReadsPerDay > 100000 || p.SendsPerDay < 0 || p.SendsPerDay > 1000 {
 		return errors.New("invalid token quota")

@@ -8,6 +8,8 @@ Authorization: Bearer mg_TOKEN_ID.SECRET
 
 Send JSON with `Content-Type: application/json`. Query strings, compressed bodies, unknown fields, duplicate JSON keys, account overrides, and raw GOG commands are rejected. Responses are not cached. Every response has an `X-Request-ID` for the audit log. Error responses contain `{"error":"code"}`. Use HTTPS through the private proxy.
 
+The owner may grant `policy.unrestricted_read: true` (**Full read access**). With this permission, search/read bypass sensitive-content rules and mailbox label/sender restrictions. Existing endpoint scopes, quotas, authentication, audit logging, and parsing/output limits still apply. Available text can be returned from messages with attachments, but attachments cannot be downloaded. Outbound filtering is independent. The filtering behavior below describes tokens without this permission.
+
 ## Search
 
 `POST /v1/messages/search` — permission `mail.search`

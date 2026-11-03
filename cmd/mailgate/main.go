@@ -288,6 +288,7 @@ func tokens(ctx context.Context, s *gateway.Store, args []string, out, errOut io
 		f := flags("tokens create", errOut)
 		name := f.String("name", "", "human-readable agent name")
 		scopes := f.String("scopes", "mail.search,mail.read", "comma-separated mail.search,mail.read,mail.send")
+		f.BoolVar(&p.UnrestrictedRead, "unrestricted-read", false, "allow all email content and bypass mailbox restrictions; requires mail.read")
 		expires := f.Duration("expires-in", 30*24*time.Hour, "token lifetime, e.g. 720h")
 		f.IntVar(&p.RequestsPerMinute, "requests-per-minute", p.RequestsPerMinute, "request limit per minute")
 		f.IntVar(&p.ReadsPerDay, "reads-per-day", p.ReadsPerDay, "messages inspected per UTC day, including search candidates")

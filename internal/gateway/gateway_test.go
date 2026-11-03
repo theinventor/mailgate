@@ -226,7 +226,7 @@ func TestSensitiveSearchReturnsEmptyAndQueuesBothAlerts(t *testing.T) {
 		if err != nil || len(jobs) != 1 {
 			t.Fatalf("missing %s alert: %v", channel, err)
 		}
-		if !strings.Contains(jobs[0].Message, token.ID) || strings.Contains(jobs[0].Message, "Example Person") {
+		if !strings.Contains(jobs[0].Message, token.ID) || !strings.Contains(jobs[0].Message, "Bot: test agent") || !strings.Contains(jobs[0].Message, "Query: driver's license for Example Person") {
 			t.Fatal("alert attribution or privacy failure")
 		}
 	}
@@ -235,8 +235,8 @@ func TestSensitiveSearchReturnsEmptyAndQueuesBothAlerts(t *testing.T) {
 		t.Fatal(err)
 	}
 	logs := mustJSON(t, events)
-	if strings.Contains(logs, raw) || strings.Contains(logs, "driver's license for Example Person") {
-		t.Fatal("secret/query logged")
+	if strings.Contains(logs, raw) || !strings.Contains(logs, "query_preview") {
+		t.Fatal("secret logged or owner-requested query preview missing")
 	}
 }
 
