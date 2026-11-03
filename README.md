@@ -25,7 +25,7 @@ The goal is useful delegation with a clear owner-controlled boundary: decide wha
 | Enforce policy outside the model | Validate requests, inspect returned messages, and apply permissions and quotas in the service |
 | Make sending accountable | Add the owner's required CC/BCC in the service and retain a durable record of each send attempt |
 | Make access revocable | Issue separate expiring tokens; change or revoke one agent's access independently |
-| Keep an operational record | Record request metadata and policy events without storing raw passwords, bearer values, queries, or mail bodies in the audit log |
+| Keep an operational record | Record bot identity, request metadata, and policy events; flagged requests include bounded, redacted previews, without email bodies or authentication headers |
 | Surface suspicious behavior | Queue independent Pushover and brrr alerts when configured rules trigger |
 | Treat uncertain delivery carefully | Preserve pending or uncertain sends so a lost response cannot automatically trigger another send under the same key |
 
@@ -96,6 +96,8 @@ These checks are conservative and imperfect. Novel wording, obfuscation, and fal
 **Full read access** is an optional owner-controlled token permission (`unrestricted_read: true`). It permits all email searches and available message text, including login codes and sensitive content, and bypasses mailbox label/sender restrictions. It requires `mail.read`; search still requires `mail.search`. Authentication, expiry, revocation, quotas, audit logging, parsing/output limits, and send controls still apply. Messages with attachments can return their available text, but attachment downloads and OCR are not supported. Successful searches and reads record the full-read permission in the audit log.
 
 Alert deliveries are stored in separate durable queues with retry/backoff. A provider outage can delay a notification, and a crash after delivery can produce a duplicate alert. The admin interface shows pending deliveries.
+
+Notifications identify the bot in the title and show the HTTP method/path, a readable reason, response status, time, client address, and audit reference. Flagged searches include a redacted query preview and distinguish a blocked query from a protected email encountered in otherwise ordinary search results. Withheld emails include their ID and redacted sender/subject; blocked sends include redacted recipients and subject. Email bodies, authentication headers, raw query-string parameters, and raw pagination cursors are never included. Known credentials and numeric secrets are masked before previews are shortened. Ordinary successful searches retain only their query hash. The Activity page shows the same context, and bot names are preserved even after a token is renamed or deleted.
 
 ## Sending without silent or accidental duplicates
 

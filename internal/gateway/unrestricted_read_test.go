@@ -68,7 +68,9 @@ func TestUnrestrictedReadSearchReadAndPolicyChanges(t *testing.T) {
 	if !strings.Contains(audit, `"unrestricted_read":true`) {
 		t.Fatal("full read access not attributed in audit")
 	}
-	for _, secret := range []string{raw, "654321", "123-45-6789", "verification code"} {
+	// Filtered-token alerts may now describe the phrase being searched, but
+	// credential values and the actual protected numbers still stay private.
+	for _, secret := range []string{raw, "654321", "123-45-6789"} {
 		if strings.Contains(audit, secret) {
 			t.Fatal("mail content or credential logged")
 		}

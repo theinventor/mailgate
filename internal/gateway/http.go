@@ -32,6 +32,8 @@ type API struct {
 	logger       *slog.Logger
 }
 
+type requestedPathKey struct{}
+
 func NewAPI(c Config, s *Store, b Backend, channels []string, logger *slog.Logger) *API {
 	if logger == nil {
 		logger = slog.Default()
@@ -43,7 +45,7 @@ func (a *API) HTTPServer() *http.Server {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/") {
 			// Never expose owner setup or login through the agents' listener.
-			r = r.Clone(r.Context())
+			r = r.Clone(context.WithValue(r.Context(), requestedPathKey{}, r.URL.Path))
 			r.URL.Path = "/admin-not-on-agent-port"
 		}
 		a.ServeHTTP(w, r)
@@ -129,7 +131,12 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	route := routeName(r)
 	peer := requestPeer(r)
-	event := Event{RequestID: id, Route: route, Peer: peer}
+	requestedPath := r.URL.Path
+	if original, ok := r.Context().Value(requestedPathKey{}).(string); ok {
+		requestedPath = original
+	}
+	metadata := map[string]any{"method": requestPreview(r.Method, 20), "path": requestPreview(requestedPath, 160)}
+	event := Event{RequestID: id, Route: route, Peer: peer, Details: metadata}
 	result := failure(500, "internal_error")
 	// Everything is buffered until the final audit entry is durable. A failed
 	// audit write cannot result in an unlogged disclosure of email contents.
@@ -143,6 +150,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		event.Details = result.details
 		if event.Details == nil {
 			event.Details = map[string]any{}
+		}
+		for key, value := range metadata {
+			event.Details[key] = value
 		}
 		event.Details["duration_ms"] = time.Since(started).Milliseconds()
 		if result.reason != "" {
@@ -211,6 +221,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	event.TokenID = token.ID
+	event.TokenName = token.Name
 	if err := a.store.TakeQuota(ctx, "requests:"+token.ID, time.Minute, 1, token.Policy.RequestsPerMinute); err != nil {
 		result = quotaFailure(err)
 		if errors.Is(err, ErrQuota) {
@@ -245,6 +256,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !token.Policy.Has(scope) {
 		result = failure(403, "permission_denied")
 		result.reason = "permission_denied"
+		result.details = map[string]any{"required_permission": scope}
 		return
 	}
 	if route == "messages.read" {
@@ -371,12 +383,6 @@ type searchResponse struct {
 
 func (a *API) search(r *http.Request, t Token) (result response) {
 	alertReason := ""
-	defer func() {
-		// A later page failure must not erase a sensitive result already observed.
-		if alertReason != "" {
-			result.reason = alertReason
-		}
-	}()
 	var input searchRequest
 	if err := decodeRequest(r, &input); err != nil {
 		return failure(400, "invalid_request")
@@ -389,10 +395,26 @@ func (a *API) search(r *http.Request, t Token) (result response) {
 	}
 	output := searchResponse{Messages: []Message{}}
 	details := map[string]any{"query_hash": hashText(input.Query)}
+	defer func() {
+		// A later page failure must not erase a sensitive result or its context.
+		if alertReason != "" {
+			result.reason = alertReason
+		}
+		if result.reason != "" {
+			if result.details == nil {
+				result.details = map[string]any{}
+			}
+			for key, value := range details {
+				result.details[key] = value
+			}
+			result.details["query_preview"] = requestPreview(input.Query, 180)
+		}
+	}()
 	if t.Policy.UnrestrictedRead {
 		details["unrestricted_read"] = true
 	} else {
 		if reason := a.inspector.Check(input.Query); reason != "" {
+			details["trigger"] = "search_query"
 			return response{status: 200, body: output, reason: reason, details: details}
 		}
 	}
@@ -440,8 +462,11 @@ func (a *API) search(r *http.Request, t Token) (result response) {
 			}
 			if reason := a.inspector.Message(entry.m, t.Policy); reason != "" {
 				withheld++
+				details["withheld"] = withheld
 				if alertReason == "" && reason != "outside_mailbox_scope" && reason != "uninspectable_message" {
 					alertReason = reason
+					details["trigger"] = "search_result"
+					alertMessageContext(details, entry.m)
 				}
 				continue
 			}
@@ -487,7 +512,8 @@ func (a *API) read(r *http.Request, t Token) response {
 	if reason := a.inspector.Message(m, t.Policy); reason != "" {
 		out := failure(404, "not_found")
 		out.reason = reason
-		out.details = map[string]any{"message_id": id}
+		out.details = map[string]any{"message_id": id, "trigger": "message"}
+		alertMessageContext(out.details, m)
 		return out
 	}
 	m.Untrusted = true
@@ -507,7 +533,7 @@ type sendRequest struct {
 
 var idempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 
-func (a *API) send(r *http.Request, t Token, event Event) response {
+func (a *API) send(r *http.Request, t Token, event Event) (result response) {
 	keys := r.Header.Values("Idempotency-Key")
 	if len(keys) != 1 || !idempotencyPattern.MatchString(keys[0]) {
 		return failure(400, "idempotency_key_required")
@@ -520,6 +546,16 @@ func (a *API) send(r *http.Request, t Token, event Event) response {
 	if len(input.To) < 1 || len(input.To)+len(input.CC) > 20 || len(input.Subject) < 1 || len(input.Subject) > 200 || strings.ContainsAny(input.Subject, "\r\n\x00") || len(input.Body) < 1 || len(input.Body) > 32<<10 || strings.ContainsRune(input.Body, 0) {
 		return failure(400, "invalid_request")
 	}
+	defer func() {
+		if result.reason != "" {
+			if result.details == nil {
+				result.details = map[string]any{}
+			}
+			result.details["trigger"] = "outgoing_message"
+			result.details["message_subject"] = requestPreview(input.Subject, 100)
+			result.details["recipient_preview"] = requestPreview(strings.Join(append(append([]string{}, input.To...), input.CC...), ", "), 180)
+		}
+	}()
 	out := Outgoing{Subject: input.Subject, Body: input.Body}
 	for _, group := range []struct {
 		input  []string

@@ -138,9 +138,12 @@ async function refresh() {
     const events = await api("audit"); $("#activity-body").replaceChildren();
     for (const item of events) {
       const row = el("tr"); cell(row, localDate(item.at)); cell(row, item.action);
-      cell(row, item.token_id || "—", "mono"); cell(row, item.status || "—");
+      const actor = cell(row, item.token_name || item.token_id || "—");
+      if (item.token_name && item.token_id) actor.append(el("small", item.token_id, "mono"));
+      cell(row, item.status || "—");
       const detail = item.details || {};
-      cell(row, [item.route, detail.rule, detail.unrestricted_read ? "Full read access" : "", detail.name, detail.returned === undefined ? "" : detail.returned + " returned", detail.withheld ? detail.withheld + " withheld" : ""].filter(Boolean).join(" · "), "details-cell");
+      const trigger = {search_query:"Search query blocked", search_result:"Protected email in search results", message:"Requested email withheld", outgoing_message:"Outgoing message"}[detail.trigger];
+      cell(row, ["Audit #" + item.id, [detail.method, detail.path].filter(Boolean).join(" ") || item.route, detail.rule, trigger, detail.query_preview ? "Query: " + detail.query_preview : "", detail.message_from ? "From: " + detail.message_from : "", detail.message_subject ? "Subject: " + detail.message_subject : "", detail.recipient_preview ? "Recipients: " + detail.recipient_preview : "", detail.required_permission ? "Requires " + detail.required_permission : "", detail.unrestricted_read ? "Full read access" : "", detail.name, detail.returned === undefined ? "" : detail.returned + " returned", detail.withheld ? detail.withheld + " withheld" : ""].filter(Boolean).join(" · "), "details-cell");
       $("#activity-body").append(row);
     }
   }

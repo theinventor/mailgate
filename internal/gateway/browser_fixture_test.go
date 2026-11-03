@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -14,7 +15,10 @@ func TestBrowserFixture(t *testing.T) {
 	if path == "" {
 		t.Skip("browser-test fixture only")
 	}
-	a, _, _ := testAPI(t)
+	a, store, _ := testAPI(t)
+	if err := store.Record(context.Background(), Event{Action: "request.completed", TokenID: "fixture-token", TokenName: "Alert detail test bot", Route: "unrecognized", Status: 404, Details: map[string]any{"method": "GET", "path": "/v1/labels", "rule": "unknown_endpoint", "query_preview": `<img src=x onerror="window.alertDetailXSS=true">`}}, nil, ""); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewTLSServer(a.AdminHTTPServer().Handler)
 	defer server.Close()
 	a.config.AdminOrigin = server.URL
