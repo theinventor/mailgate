@@ -81,7 +81,7 @@ See the [agent API reference](docs/api.md) for request/response shapes, paginati
 
 ## Sensitive content and alerts
 
-A search that matches a sensitive-content rule receives an ordinary successful empty result:
+By default, a search that matches a sensitive-content rule receives an ordinary successful empty result:
 
 ```json
 {"messages":[]}
@@ -91,7 +91,9 @@ The owner receives a policy alert through Pushover and brrr, and the event appea
 
 Checks cover normalized search terms, configurable sensitive keywords, identity/payment/authentication patterns, and returned message content. Direct message-ID reads undergo the same inspection and mailbox restrictions as search results. Outgoing content is inspected as well.
 
-These checks are conservative and imperfect. Novel wording, obfuscation, and false positives remain possible. Timing and quotas can reveal that filtering exists. Version 1 withholds entire messages containing uninspectable attachments, including many inline signature images; it does not perform OCR or PDF extraction. Allowed Gmail label IDs and globally blocked labels provide additional limits on the messages an agent can access.
+These checks are conservative and imperfect. Novel wording, obfuscation, and false positives remain possible. Timing and quotas can reveal that filtering exists. Filtered tokens withhold entire messages containing uninspectable attachments, including many inline signature images; it does not perform OCR or PDF extraction. Allowed Gmail label IDs and globally blocked labels provide additional limits on the messages an agent can access.
+
+**Full read access** is an optional owner-controlled token permission (`unrestricted_read: true`). It permits all email searches and available message text, including login codes and sensitive content, and bypasses mailbox label/sender restrictions. It requires `mail.read`; search still requires `mail.search`. Authentication, expiry, revocation, quotas, audit logging, parsing/output limits, and send controls still apply. Messages with attachments can return their available text, but attachment downloads and OCR are not supported. Successful searches and reads record the full-read permission in the audit log.
 
 Alert deliveries are stored in separate durable queues with retry/backoff. A provider outage can delay a notification, and a crash after delivery can produce a duplicate alert. The admin interface shows pending deliveries.
 

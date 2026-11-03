@@ -109,6 +109,11 @@ func luhn(s string) bool {
 }
 
 func (i *Inspector) Message(m Message, p TokenPolicy) string {
+	// This owner-granted permission bypasses read filtering, never send checks.
+	// Parsing/output limits remain enforced by the backend before this point.
+	if p.UnrestrictedRead {
+		return ""
+	}
 	if m.Uninspectable {
 		return "uninspectable_message"
 	}

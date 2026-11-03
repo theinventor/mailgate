@@ -76,6 +76,14 @@ func TestAutomaticSetupAndAdminCRUD(t *testing.T) {
 	if strings.Contains(w.Body.String(), created.Secret) || strings.Contains(w.Body.String(), "digest") {
 		t.Fatal("token secret redisclosed")
 	}
+	full := DefaultTokenPolicy()
+	full.UnrestrictedRead = true
+	body["policy"] = full
+	wantStatus(t, request(a, "PUT", "/admin/api/tokens/"+created.Token.ID, "", mustJSON(t, body), h), 200)
+	fullToken, err := s.Authenticate(ctx, created.Secret)
+	if err != nil || !fullToken.Policy.UnrestrictedRead {
+		t.Fatal("full read grant did not preserve existing token")
+	}
 	p := DefaultTokenPolicy()
 	p.Scopes = []string{ScopeSearch}
 	p.ReadsPerDay = 10
@@ -83,7 +91,7 @@ func TestAutomaticSetupAndAdminCRUD(t *testing.T) {
 	body["name"] = "Shopping reader"
 	wantStatus(t, request(a, "PUT", "/admin/api/tokens/"+created.Token.ID, "", mustJSON(t, body), h), 200)
 	changed, err := s.Authenticate(ctx, created.Secret)
-	if err != nil || changed.Policy.Has(ScopeRead) || changed.Policy.ReadsPerDay != 10 {
+	if err != nil || changed.Policy.Has(ScopeRead) || changed.Policy.UnrestrictedRead || changed.Policy.ReadsPerDay != 10 {
 		t.Fatal("token update ineffective")
 	}
 	wantStatus(t, request(a, "POST", "/admin/api/tokens/"+created.Token.ID+"/revoke", "", `{}`, h), 200)

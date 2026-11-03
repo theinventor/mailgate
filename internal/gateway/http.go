@@ -389,8 +389,12 @@ func (a *API) search(r *http.Request, t Token) (result response) {
 	}
 	output := searchResponse{Messages: []Message{}}
 	details := map[string]any{"query_hash": hashText(input.Query)}
-	if reason := a.inspector.Check(input.Query); reason != "" {
-		return response{status: 200, body: output, reason: reason, details: details}
+	if t.Policy.UnrestrictedRead {
+		details["unrestricted_read"] = true
+	} else {
+		if reason := a.inspector.Check(input.Query); reason != "" {
+			return response{status: 200, body: output, reason: reason, details: details}
+		}
 	}
 	page := ""
 	if input.Cursor != "" {
@@ -487,7 +491,11 @@ func (a *API) read(r *http.Request, t Token) response {
 		return out
 	}
 	m.Untrusted = true
-	return response{status: 200, body: map[string]any{"message": m}, details: map[string]any{"message_id": id}}
+	details := map[string]any{"message_id": id}
+	if t.Policy.UnrestrictedRead {
+		details["unrestricted_read"] = true
+	}
+	return response{status: 200, body: map[string]any{"message": m}, details: details}
 }
 
 type sendRequest struct {

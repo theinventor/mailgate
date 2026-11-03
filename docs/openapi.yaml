@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Mailgate agent API
-  version: 0.1.0
-  description: Private, permission-controlled Gmail access. Owner administration uses a separate listener and password session.
+  version: 0.1.1
+  description: Private, permission-controlled Gmail access. Owner administration uses a separate listener and password session. Owner-granted unrestricted_read bypasses content and mailbox filtering on search/read, while endpoint scopes, quotas, audit logging, and send controls still apply.
 servers:
   - url: https://mailgate.example:9444
 security:
